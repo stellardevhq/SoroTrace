@@ -1,16 +1,28 @@
 {
   "name": "@sorotrace/soroban-parser",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Soroban XDR decoding and storage tier parsing for SoroTrace",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc",
-    "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint 'src/**/*.ts'",
+    "clean": "rm -rf dist",
+    "spike": "tsx spike/decode-spike.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^13.3.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.3"
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
   }
 }
