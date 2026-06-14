@@ -19,9 +19,6 @@
   "devDependencies": {
     "turbo": "^2"
   },
-  "pnpm": {
-    "ignoredBuiltDependencies": ["sharp", "unrs-resolver"]
-  },
   "repository": {
     "type": "git",
     "url": "https://github.com/stellardevhq/SoroTrace.git"
