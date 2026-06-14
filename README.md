@@ -1,6 +1,7 @@
 # SoroTrace
 
 [![CI](https://github.com/stellardevhq/SoroTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/stellardevhq/SoroTrace/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Soroban Contract Intelligence - Explorer, Debugger, Monitor, and Static Analyser for the Stellar ecosystem.**
 
@@ -18,7 +19,13 @@ SoroTrace is an open-source developer platform that gives every Soroban develope
 | 2 | **Transaction Debugger** | Step-through breakdown of any Soroban transaction - call trace, storage diff, events, resource profiling, failure analysis |
 | 3 | **Contract Monitor** | Real-time alerts on contract activity - volume spikes, failed calls, unknown callers, state changes, TTL warnings |
 | 4 | **Static Analyser** | Automated scanning for Soroban-specific vulnerabilities - state archival mishandling, auth bypass patterns, storage misuse |
-
+ 
+> **Glossary for new contributors**
+> - **Soroban** — the smart-contract platform built into the Stellar blockchain.
+> - **XDR** — the binary serialisation format Stellar uses to encode transactions and contract data.
+> - **TTL** — "time-to-live"; Soroban contract storage entries expire unless explicitly extended.
+> - **ABI** — "application binary interface"; the published description of a contract's callable functions and data types.
+ 
 ---
 
 ## Repository Structure
@@ -48,74 +55,105 @@ sorotrace/
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) >= 20
-- [pnpm](https://pnpm.io/) >= 9 - `npm install -g pnpm`
-- [Docker](https://www.docker.com/) and Docker Compose (for local PostgreSQL and Redis)
+Before setting up the project locally, make sure you have the following installed:
+ 
+| Tool | Version | Install |
+| ---- | ------- | ------- |
+| [Node.js](https://nodejs.org/) | 22 (see `.nvmrc`) | [nodejs.org](https://nodejs.org/) or [nvm](https://github.com/nvm-sh/nvm) |
+| [pnpm](https://pnpm.io/) | 10.4.1 | `npm install -g pnpm@10.4.1` |
+| [Docker](https://www.docker.com/) + Docker Compose | any recent version | [docker.com](https://www.docker.com/get-started/) |
+| [Git](https://git-scm.com/) | any recent version | [git-scm.com](https://git-scm.com/) |
+ 
+> **Tip:** If you use [nvm](https://github.com/nvm-sh/nvm), run `nvm use` from the repo root to automatically switch to the correct Node version.
 
-### Installation
 
+## Local Setup
+ 
+Follow these steps in order.
+ 
+### 1. Clone the repository
+ 
 ```bash
-# Clone the repository
-git clone https://github.com/stellardevhq/sorotrace.git
-cd sorotrace
-
-# Install all dependencies across the monorepo
+git clone https://github.com/stellardevhq/SoroTrace.git
+cd SoroTrace
+```
+ 
+### 2. Install dependencies
+ 
+```bash
 pnpm install
 ```
-
-### Local setup
-
-Start local infrastructure before running the backend or frontend:
-
+ 
+This installs packages for every app and shared package in one command.
+ 
+### 3. Start local infrastructure
+ 
+SoroTrace's backend needs a PostgreSQL database and a Redis instance. Docker Compose starts both:
+ 
 ```bash
-# Start PostgreSQL and Redis
 docker compose up -d
 ```
-
-- PostgreSQL: `localhost:5432`, `user/password`, database `sorotrace`
-- Redis: `localhost:6379`
-
-### Environment Setup
-
+ 
+Default connection details (used in the example `.env` files below):
+ 
+| Service    | Host        | Port | Credentials             |
+| ---------- | ----------- | ---- | ----------------------- |
+| PostgreSQL | `localhost` | 5432 | `user` / `password`, db `sorotrace` |
+| Redis      | `localhost` | 6379 | no password             |
+ 
+### 4. Set up environment variables
+ 
+Each app ships an example environment file. Copy them and edit any values that differ from your local setup:
+ 
 ```bash
-# Copy environment templates
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
-
-# Run database migrations
+```
+ 
+### 5. Run database migrations
+ 
+This creates the database schema:
+ 
+```bash
 pnpm --filter api db:migrate
 ```
-
-### Running in Development
-
+ 
+### 6. Start the development servers
+ 
 ```bash
-# Run all apps and packages in watch mode
 pnpm dev
-
-# Run a specific app only
-pnpm --filter api dev
-pnpm --filter web dev
 ```
-
-### Building
-
+ 
+This starts all apps and packages in parallel with hot-reload. You can also start a single app:
+ 
 ```bash
-# Build everything
-pnpm build
-
-# Build a specific app
-pnpm --filter api build
-pnpm --filter web build
+pnpm --filter api dev   # backend only  → http://localhost:3001
+pnpm --filter web dev   # frontend only → http://localhost:3000
 ```
-
 ---
+
+## Available Scripts
+ 
+Run these from the repository root:
+ 
+| Command          | What it does                                             |
+| ---------------- | -------------------------------------------------------- |
+| `pnpm dev`       | Start all apps in development mode with hot-reload       |
+| `pnpm build`     | Build all apps and packages for production               |
+| `pnpm typecheck` | Run TypeScript type checking across the entire monorepo  |
+| `pnpm lint`      | Lint all apps and packages with ESLint                   |
+| `pnpm test`      | Run all test suites                                      |
+| `pnpm format`    | Format all files with Prettier                           |
+| `pnpm clean`     | Remove all build artefacts and `node_modules` directories |
+ 
+Turborepo runs tasks in the correct dependency order automatically — you do not need to `cd` into individual packages.
 
 ## Apps
 
 | App | Description | README |
-|-----|-------------|--------|
-| `apps/api` | NestJS backend API and indexer | [apps/api/README.md](./apps/api/README.md) |
-| `apps/web` | Next.js frontend application | [apps/web/README.md](./apps/web/README.md) |
+| --- | ----------- | ------ |
+| `apps/api` | NestJS backend — data indexer, REST and WebSocket API, alert engine | [apps/api/README.md](apps/api/README.md) |
+| `apps/web` | Next.js 14 frontend — explorer, debugger, monitor, and scanner UI | [apps/web/README.md](apps/web/README.md) |
 
 ## Packages
 
@@ -157,11 +195,7 @@ Run from the root of the monorepo:
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
-
-- **Bug reports** - open an issue with the `bug` label
-- **Feature requests** - open an issue with the `enhancement` label
-- **Good first issues** - look for issues labelled `good first issue`
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ---
 
