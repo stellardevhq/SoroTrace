@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Typecheck · Lint · Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # needed for Turborepo to diff changed packages
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc # pins to the version in .nvmrc (22)
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1 # pinned to match packageManager field in package.json
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+      - name: Lint
+        run: pnpm lint
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build
+        run: pnpm build
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
