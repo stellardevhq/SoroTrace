@@ -56,7 +56,7 @@ All of the following decoded cleanly via `scValToNative`:
 | `scvMap` | plain `object` | Compound storage keys; keys are sorted by the SDK |
 | `scvVec` | `Array` | Event topics, argument lists |
 
-Composite types (`scvMap`, `scvVec`) recurse correctly — nested i128 values inside a map decode to BigInt without extra steps.
+Composite types (`scvMap`, `scvVec`) recurse correctly - nested i128 values inside a map decode to BigInt without extra steps.
 
 Round-trip serialisation also works: `xdr.ScVal.fromXDR(val.toXDR())` reproduces the original value exactly. This means the parser can accept raw XDR bytes directly (e.g., from a database or queue) without needing the full SDK envelope wrapper.
 
