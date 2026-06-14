@@ -1,14 +1,14 @@
-# Spike Notes — Soroban XDR Decoding
+## Spike Notes: Soroban XDR Decoding
 
 **Package:** `packages/soroban-parser`  
 **Spike script:** `spike/decode-spike.ts`  
 **SDK version tested:** `@stellar/stellar-sdk` v13.3.0  
 **Date:** June 2026  
-**Status:** Complete — production design decisions can now be made.
+**Status:** Complete: production design decisions can now be made.
 
 ---
 
-## What the Spike Validated
+### What the Spike Validated
 
 The spike had two goals:
 
@@ -19,7 +19,7 @@ The local decode section of the spike (`runLocalDecodeValidation`) was executed 
 
 ---
 
-## SDK Methods Used
+### SDK Methods Used
 
 | Method / API | Purpose |
 | --- | --- |
@@ -140,7 +140,7 @@ The production parser should decide at the boundary (before returning to the API
 | Fee-bump envelope handling | `extractInvokeArgs` should handle `feeBumpTransactionEnvelope` by unwrapping the inner transaction |
 | Pre-v3 meta guard | `assertV3Meta` helper that throws a typed `UnsupportedMetaVersionError` |
 | BigInt → string at API boundary | `serializeScVal(val: unknown): SerializedScVal` normalising all BigInts to decimal strings before they leave the parser package |
-| `scvLedgerKeyContractInstance` | Special case for contract instance storage — needs separate decoding path |
+| `scvLedgerKeyContractInstance` | Special case for contract instance storage - needs separate decoding path |
 | Diagnostic events vs. contract events | `sorobanMeta.events()` contains only contract events; diagnostic events are in `sorobanMeta.diagnosticEvents()` and are only present on FAILED transactions |
 
 ---
