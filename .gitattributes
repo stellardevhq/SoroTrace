@@ -1,0 +1,14 @@
+# Normalize all text files to LF on commit
+* text=auto eol=lf
+
+# Force shell scripts to LF always
+*.sh text eol=lf
+
+# YAML/JSON/config files — LF
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Windows-specific files can keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
