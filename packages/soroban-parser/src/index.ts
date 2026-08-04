@@ -4,4 +4,4 @@
  * Parser utilities for Soroban smart contract bytecode and metadata.
  */
 
-export {};
+export * from "./storage";
