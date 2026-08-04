@@ -17,7 +17,7 @@ Specifically, it decodes:
 
 **Spike phase.** The production parser has not been built yet.
 
-A technical spike has been completed to validate that `@stellar/stellar-sdk` v13 can decode all common Soroban XDR types without requiring a custom binary parser. The spike findings are documented in:
+A technical spike has been completed to validate that `@stellar/stellar-sdk` v16 can decode all common Soroban XDR types without requiring a custom binary parser. The spike has been run end-to-end against a real testnet transaction (v4 transaction meta, storage diffs, and contract events). Findings are documented in:
 
 - [`spike/decode-spike.ts`](spike/decode-spike.ts) - the runnable spike script
 - [`spike/spike-notes.md`](spike/spike-notes.md) - full findings, gaps, and recommended production approach

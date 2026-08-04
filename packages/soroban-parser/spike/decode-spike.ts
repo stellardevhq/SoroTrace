@@ -8,7 +8,7 @@
  *
  * Purpose
  * -------
- * Validate that @stellar/stellar-sdk v13 can decode Soroban
+ * Validate that @stellar/stellar-sdk v16 can decode Soroban
  * testnet transaction XDR into structured TypeScript objects.
  * Specifically, extract:
  *   1. The invoked function name
@@ -45,12 +45,12 @@ import {
 const RPC_URL = "https://soroban-testnet.stellar.org";
 
 /**
- * A hardcoded testnet transaction hash for a Soroban token contract
- * transfer() call. This is a real InvokeHostFunction transaction that
- * produces:
- *   - a function name (symbol ScVal)
- *   - address and i128 arguments
- *   - a void return value (transfer returns nothing on success)
+ * A hardcoded testnet transaction hash for a Soroban `push` call on the
+ * Randomness contract. This is a real, successful InvokeHostFunction
+ * transaction that produces:
+ *   - a function name (SCSymbol)
+ *   - decoded ScVal arguments (u64 + bytes)
+ *   - a return value
  *   - contractData ledger entry changes in the meta
  *
  * Note: Testnet transactions are pruned by the RPC after approximately
@@ -62,7 +62,7 @@ const RPC_URL = "https://soroban-testnet.stellar.org";
  */
 const TX_HASH =
   process.env.SPIKE_HASH ??
-  "5b38e9e83b93e1de2cccce0f2b5ea887b2d5e3fdac7a3c76bf1f90c50de9b5c4";
+  "2b85d3465a292f70363ae79f9eeec2b7cd005815abcce536ec5e8316bc76ad9e";
 
 const MODE = process.env.SPIKE_MODE ?? "live";
 
@@ -72,11 +72,12 @@ const MODE = process.env.SPIKE_MODE ?? "live";
  * Decode a ScVal to a JavaScript native value using the SDK helper.
  * Returns a human-readable string for logging.
  *
- * Findings from the spike:
+ * Findings from the spike (SDK v16.2.0):
  *   scvSymbol  → string         ✓ works out of the box
  *   scvI128    → BigInt         ✓ works out of the box
  *   scvU128    → BigInt         ✓ works out of the box
  *   scvI64     → BigInt         ✓ works out of the box
+ *   scvU64     → BigInt         ✓ works out of the box
  *   scvU32     → number         ✓ works out of the box
  *   scvBool    → boolean        ✓ works out of the box
  *   scvVoid    → null           ✓ works out of the box
@@ -84,7 +85,8 @@ const MODE = process.env.SPIKE_MODE ?? "live";
  *   scvMap     → plain object   ✓ works out of the box (keys sorted)
  *   scvVec     → array          ✓ works out of the box
  *   scvBytes   → Buffer         ⚠ needs .toString('hex') for display
- *   scvAddress → StrKey string  ⚠ see note in spike-notes.md
+ *   scvAddress → StrKey string  ✓ works out of the box
+ *   scvLedgerKeyContractInstance → undefined (special case, see notes)
  */
 function decodeScVal(val: xdr.ScVal): unknown {
   return scValToNative(val);
@@ -97,6 +99,130 @@ function display(value: unknown): string {
   );
 }
 
+/**
+ * Walk a TransactionEnvelope to the first InvokeContract host function.
+ * In v16 (js-xdr 4.0) envelope fields are accessed as methods (e.g.
+ * `envelope.value().tx()`), and fee-bump envelopes need unwrapping.
+ */
+function extractInvokeContract(
+  envelope: xdr.TransactionEnvelope
+): xdr.InvokeContractArgs | undefined {
+  const value = envelope.value();
+
+  let tx: xdr.TransactionV1 | undefined;
+  try {
+    tx = value.tx();
+  } catch {
+    try {
+      const inner = value.feeBump().innerTx().v1();
+      tx = inner.tx();
+    } catch {
+      tx = undefined;
+    }
+  }
+
+  if (!tx) {
+    return undefined;
+  }
+
+  for (const op of tx.operations()) {
+    const body = op.body();
+    const invokeHostFunctionOp = body.invokeHostFunctionOp();
+    if (!invokeHostFunctionOp) {
+      continue;
+    }
+    const hostFn = invokeHostFunctionOp.hostFunction();
+    if (hostFn.switch().name === "hostFunctionTypeInvokeContract") {
+      return hostFn.invokeContract();
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extract the per-operation ledger entry changes from a TransactionMeta.
+ * Both v3 and v4 expose the same `.operations()[i].changes()` shape; the
+ * spike records the version so the two can be compared.
+ */
+function extractOperationChanges(meta: xdr.TransactionMeta): {
+  version: number;
+  operationChanges: xdr.LedgerEntryChange[][];
+} {
+  const version = meta.switch();
+  if (version === 3) {
+    return {
+      version,
+      operationChanges: meta.v3().operations().map((opMeta) => opMeta.changes()),
+    };
+  }
+  if (version === 4) {
+    return {
+      version,
+      operationChanges: meta.v4().operations().map((opMeta) => opMeta.changes()),
+    };
+  }
+  return { version, operationChanges: [] };
+}
+
+/** Decode a storage entry key/value for display, handling special cases. */
+function describeStorageChange(change: xdr.LedgerEntryChange): string {
+  const type = change.switch().name;
+  let data: xdr.LedgerEntryData | xdr.LedgerKey;
+  if (type === "ledgerEntryCreated") {
+    data = change.created().data();
+  } else if (type === "ledgerEntryUpdated") {
+    data = change.updated().data();
+  } else if (type === "ledgerEntryRemoved") {
+    data = change.removed();
+  } else {
+    return `    change: ${type}`;
+  }
+
+  const entryType = data.switch().name;
+  if (entryType !== "contractData") {
+    return `    change: ${type} — ${entryType}`;
+  }
+
+  const entry = data.contractData();
+  const durability = entry.durability().name;
+
+  // The contract instance lives under a scvLedgerKeyContractInstance key.
+  // scValToNative returns undefined for it, so describe it from the ScVal
+  // union: val.instance() gives the ContractInstance (wasm hash + storage).
+  const isInstanceEntry = entry.key().switch().name === "scvLedgerKeyContractInstance";
+
+  let keyDescription: string;
+  let valueDescription: string;
+  try {
+    if (isInstanceEntry) {
+      keyDescription = "(contract instance)";
+      const val = entry.val();
+      const inst = val.instance();
+      const exec = inst.executable();
+      const wasm = exec.wasmHash?.();
+      const storage = inst.storage();
+      valueDescription =
+        `contract instance — ` +
+        `wasm ${wasm ? wasm.toString("hex").slice(0, 16) + "…" : "(unknown)"}, ` +
+        `storage entries: ${storage.length}`;
+    } else {
+      keyDescription = display(decodeScVal(entry.key()));
+      valueDescription = display(decodeScVal(entry.val()));
+    }
+  } catch {
+    keyDescription = "(unable to decode)";
+    valueDescription = "(unable to decode)";
+  }
+
+  return [
+    `    change: ${type} — contractData`,
+    `      durability : ${durability}`,
+    `      key        : ${keyDescription}`,
+    `      value      : ${valueDescription}`,
+  ].join("\n");
+}
+
 // ── Section 1: Local decode validation ───────────────────────────────────────
 // Runs in both LOCAL and LIVE modes. Proves the decode path is correct before
 // we depend on network results.
@@ -104,7 +230,7 @@ function display(value: unknown): string {
 function runLocalDecodeValidation(): void {
   console.log("\n── LOCAL DECODE VALIDATION (no network needed) ──────────────");
 
-  // Function name (Soroban stores this as an ScVal symbol in the envelope)
+  // Function name (in v16 this is an SCSymbol string, not a symbol ScVal)
   const fnName = xdr.ScVal.scvSymbol("transfer");
   console.log(
     `[✓] scvSymbol 'transfer' → ${display(decodeScVal(fnName))}`
@@ -257,24 +383,21 @@ async function runLiveFetch(): Promise<void> {
   const envelopeXdr = txResponse.envelopeXdr;
   if (envelopeXdr) {
     try {
-      const ops = envelopeXdr.value().tx?.operations?.();
-      const invokeOp = ops?.[0]?.body()?.invokeHostFunctionOp?.();
-      const hostFn = invokeOp?.hostFunction();
-      const fnType = hostFn?.switch().name;
-      console.log(`    Host function type : ${fnType}`);
+      const invokeContract = extractInvokeContract(envelopeXdr);
+      if (invokeContract) {
+        // In v16 the function name is an SCSymbol (plain string), not a symbol
+        // ScVal — String() gives the name directly.
+        console.log(`    Function name      : ${String(invokeContract.functionName())}`);
 
-      if (fnType === "hostFunctionTypeInvokeContract") {
-        const invokeArgs = hostFn!.invokeContract();
-        const fnName = invokeArgs.functionName();
-        console.log(`    Function name      : ${display(decodeScVal(fnName))}`);
-
-        const args = invokeArgs.args();
+        const args = invokeContract.args();
         console.log(`    Argument count     : ${args.length}`);
         args.forEach((arg, i) => {
           console.log(
             `      arg[${i}] ${arg.switch().name} = ${display(decodeScVal(arg))}`
           );
         });
+      } else {
+        console.log("    (no InvokeHostFunction operation found)");
       }
     } catch (err) {
       console.log("    Could not decode envelope:", err);
@@ -300,61 +423,50 @@ async function runLiveFetch(): Promise<void> {
   console.log("\n  Ledger entry changes (from resultMetaXdr):");
   const resultMetaXdr = txResponse.resultMetaXdr;
   if (resultMetaXdr) {
-    const metaVersion = resultMetaXdr.switch().value;
-    console.log(`    TransactionMeta version: v${metaVersion}`);
+    const { version, operationChanges } =
+      extractOperationChanges(resultMetaXdr);
 
-    if (metaVersion === 3) {
-      const v3 = resultMetaXdr.v3();
-      const sorobanMeta = v3.sorobanMeta();
-
-      if (sorobanMeta) {
-        const events = sorobanMeta.events();
-        console.log(`    Contract events emitted: ${events.length}`);
-        events.slice(0, 3).forEach((evt, i) => {
-          try {
-            const topics = evt.body().v0().topics();
-            console.log(
-              `      event[${i}] topic[0]: ${display(decodeScVal(topics[0]))}`
-            );
-          } catch {
-            console.log(`      event[${i}]: (could not decode topics)`);
-          }
-        });
-      }
-
-      const opsMeta = v3.operations();
-      let total = 0;
-      opsMeta.forEach((opMeta) => {
-        opMeta.changes().forEach((change) => {
-          const type = change.switch().name;
-          if (type === "ledgerEntryCreated" || type === "ledgerEntryUpdated") {
-            const data =
-              type === "ledgerEntryCreated"
-                ? change.created().data()
-                : change.updated().data();
-            const entryType = data.switch().name;
-            console.log(`    change[${total}]: ${type} — ${entryType}`);
-            if (entryType === "contractData") {
-              const cd = data.contractData();
-              console.log(
-                `      durability : ${cd.durability().name}`
-              );
-              console.log(
-                `      key        : ${display(decodeScVal(cd.key()))}`
-              );
-              console.log(
-                `      value      : ${display(decodeScVal(cd.val()))}`
-              );
-            }
-          } else {
-            console.log(`    change[${total}]: ${type}`);
-          }
-          total++;
-        });
-      });
-      console.log(`    Total ledger changes: ${total}`);
+    if (version < 3) {
+      console.log(
+        `    TransactionMeta version v${version}: pre-Soroban, no storage diffs.`
+      );
     } else {
-      console.log("    Pre-v3 meta: no dedicated Soroban storage section.");
+      console.log(
+        `    TransactionMeta version: v${version} (v3 and v4 both expose ` +
+          `.operations()[i].changes())`
+      );
+    }
+
+    let total = 0;
+    operationChanges.forEach((changes) => {
+      changes.forEach((change) => {
+        console.log(describeStorageChange(change));
+        total++;
+      });
+    });
+    console.log(`    Total ledger changes: ${total}`);
+
+    const events =
+      version === 3
+        ? resultMetaXdr.v3().sorobanMeta()?.events()
+        : resultMetaXdr.v4().events();
+    // In v4 the event list is DiagnosticEvent[] — each wraps the actual
+    // ContractEvent in `.event()` (plus a stage enum).
+    const contractEvents = (events ?? []).map((evt) =>
+      "event" in evt ? evt.event() : evt
+    );
+    if (contractEvents.length > 0) {
+      console.log(`\n  Contract events emitted: ${contractEvents.length}`);
+      contractEvents.slice(0, 3).forEach((evt, i) => {
+        try {
+          const topics = evt.body().v0().topics();
+          console.log(
+            `    event[${i}] topic[0]: ${display(decodeScVal(topics[0]))}`
+          );
+        } catch {
+          console.log(`    event[${i}]: (could not decode topics)`);
+        }
+      });
     }
   } else {
     console.log("    No resultMetaXdr on response.");
